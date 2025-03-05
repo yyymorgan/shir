@@ -1,0 +1,146 @@
+import os
+import subprocess
+import winreg
+import ctypes
+import paramiko
+
+gateway_key = "IR@21231598-9457-4e99-97cf-a60b0b5f3b8f@ARMimportADF@ServiceEndpoint=armimportadf.eastus.datafactory.azure.net@nN59/wRPNY+8webpflT9rqrWVHl95ej0L1VUi5My+To="
+is_register_on_remote_machine = False
+node_name = "SurMorgan"
+
+new_registry_path = r"Software\Microsoft\DataTransfer\DataManagementGateway\ConfigurationManager"
+old_registry_path = r"Software\Microsoft\DataTransfer\DataManagementGateway\HostService\Hdis"
+diacmd_path = "DiacmdPath"
+service_dll_path = "ServiceDll"
+gateway_plugin_assembly_name = "Microsoft.Hdis.AgentPlugin.AgentManagement.dll"
+gateway_plugin_type_name = "Microsoft.Hdis.AgentPlugin.AgentManagement.AgentManagementObject"
+
+def is_admin():
+    try:
+        return ctypes.windll.shell32.IsUserAnAdmin()
+    except:
+        return False
+
+def get_installed_file_path():
+    value = None
+    is_released_agent = False
+
+    try:
+        base_key = winreg.HKEY_LOCAL_MACHINE
+        new_registry_key = winreg.OpenKey(base_key, new_registry_path, 0, winreg.KEY_READ)
+        value, _ = winreg.QueryValueEx(new_registry_key, diacmd_path)
+    except FileNotFoundError:
+        try:
+            old_registry_key = winreg.OpenKey(base_key, old_registry_path, 0, winreg.KEY_READ)
+            value, _ = winreg.QueryValueEx(old_registry_key, service_dll_path)
+            is_released_agent = True
+        except FileNotFoundError:
+            pass
+
+    return value, is_released_agent
+
+def register_one_agent():
+    if not is_register_on_remote_machine:
+        file_path, is_released_agent = get_installed_file_path()
+
+        if not file_path:
+            print("Please install the self-hosted Integration Runtime first, then you can register it!")
+            return
+
+        message = ""
+        if is_released_agent:
+            file_directory_name = os.path.dirname(file_path)
+            gateway_plugin_path = os.path.join(file_directory_name, gateway_plugin_assembly_name)
+            gateway_plugin = __import__(gateway_plugin_path)
+            try:
+                ret_message = gateway_plugin.RegisterAgent(gateway_key)
+                if ret_message:
+                    message += ret_message + "\n"
+            except Exception as e:
+                message += str(e) + "\n"
+        else:
+            ret_message = subprocess.run([file_path, "-rn", gateway_key, node_name], capture_output=True, text=True)
+            if ret_message.stdout:
+                message += ret_message.stdout + "\n"
+
+        if not message.strip():
+            print("Integration Runtime registration is successful!")
+        else:
+            print(f"Integration Runtime registration has failed with below: {message}")
+    else:
+        computer_name = input("Please specify a computer name: ")
+        username = input("Please give the username to get access to the remote computer: ")
+        password = input("Please give the password to get access to the remote computer: ")
+
+        ssh = paramiko.SSHClient()
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        ssh.connect(computer_name, username=username, password=password)
+
+        command = f"""
+import winreg
+import os
+
+gateway_key = "{gateway_key}"
+new_registry_path = r"{new_registry_path}"
+old_registry_path = r"{old_registry_path}"
+diacmd_path = "{diacmd_path}"
+service_dll_path = "{service_dll_path}"
+gateway_plugin_assembly_name = "{gateway_plugin_assembly_name}"
+gateway_plugin_type_name = "{gateway_plugin_type_name}"
+
+def get_installed_file_path():
+    value = None
+    is_released_agent = False
+
+    try:
+        base_key = winreg.HKEY_LOCAL_MACHINE
+        new_registry_key = winreg.OpenKey(base_key, new_registry_path, 0, winreg.KEY_READ)
+        value, _ = winreg.QueryValueEx(new_registry_key, diacmd_path)
+    except FileNotFoundError:
+        try:
+            old_registry_key = winreg.OpenKey(base_key, old_registry_path, 0, winreg.KEY_READ)
+            value, _ = winreg.QueryValueEx(old_registry_key, service_dll_path)
+            is_released_agent = True
+        except FileNotFoundError:
+            pass
+
+    return value, is_released_agent
+
+file_path, is_released_agent = get_installed_file_path()
+
+if not file_path:
+    print("Please install the self-hosted Integration Runtime first, then you can register it!")
+else:
+    message = ""
+    if is_released_agent:
+        file_directory_name = os.path.dirname(file_path)
+        gateway_plugin_path = os.path.join(file_directory_name, gateway_plugin_assembly_name)
+        gateway_plugin = __import__(gateway_plugin_path)
+        try:
+            ret_message = gateway_plugin.RegisterAgent(gateway_key)
+            if ret_message:
+                message += ret_message + "\\n"
+        except Exception as e:
+            message += str(e) + "\\n"
+    else:
+        ret_message = subprocess.run([file_path, "-rn", gateway_key, node_name], capture_output=True, text=True)
+        if ret_message.stdout:
+            message += ret_message.stdout + "\\n"
+
+    if not message.strip():
+        print("Integration Runtime registration is successful!")
+    else:
+        print(f"Integration Runtime registration has failed with below: {message}")
+"""
+        stdin, stdout, stderr = ssh.exec_command(command)
+        print(stdout.read().decode())
+        print(stderr.read().decode())
+        ssh.close()
+
+if is_admin():
+    if not is_register_on_remote_machine:
+        register_one_agent()
+    else:
+        register_one_agent()
+else:
+    print("Please run this script as an administrator.")
