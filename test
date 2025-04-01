@@ -4,9 +4,9 @@ import winreg
 import ctypes
 import paramiko
 
-gateway_key = "IR@21231598-9457-4e99-97cf-a60b0b5f3b8f@ARMimportADF@ServiceEndpoint=armimportadf.eastus.datafactory.azure.net@nN59/wRPNY+8webpflT9rqrWVHl95ej0L1VUi5My+To="
+gateway_key = "key"
 is_register_on_remote_machine = False
-node_name = "SurMorgan"
+node_name = "name"
 
 new_registry_path = r"Software\Microsoft\DataTransfer\DataManagementGateway\ConfigurationManager"
 old_registry_path = r"Software\Microsoft\DataTransfer\DataManagementGateway\HostService\Hdis"
